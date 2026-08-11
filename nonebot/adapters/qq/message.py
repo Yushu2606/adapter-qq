@@ -576,7 +576,7 @@ class Message(BaseMessage[MessageSegment]):
     @override
     def _construct(msg: str) -> Iterable[MessageSegment]:
         text_begin = 0
-        msg = msg.replace("<qqbot-at-everyone />", "")
+        msg = msg.replace("@everyone", "")
         msg = re.sub(r"\<qqbot-at-everyone\s/\>", "", msg)
         for embed in re.finditer(
             r"\<(?P<type>(?:@|#|emoji:))!?(?P<id>\w+?)\>|\<(?P<type1>qqbot-at-user) id=\"(?P<id1>\w+)\"\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
