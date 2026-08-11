@@ -104,7 +104,7 @@ class Emoji(MessageSegment):
 class MentionUser(MessageSegment):
     @override
     def __str__(self) -> str:
-        return f"<qqbot-at-user id=\"{self.data['user_id']}\" />"
+        return f'<qqbot-at-user id="{self.data["user_id"]}" />'
 
 
 class MentionEveryone(MessageSegment):
