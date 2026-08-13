@@ -30,7 +30,7 @@ from .event import (
     FriendAddEvent,
     GroupAddRobotEvent,
     GroupAtMessageCreateEvent,
-    GroupMemberAddEvent,
+    GroupMemberEvent,
     GroupMessageCreateEvent,
     GuildMessageEvent,
     InteractionCreateEvent,
@@ -733,7 +733,8 @@ class Bot(BaseBot):
             return await self.send_to_c2c(
                 openid=event.get_user_id(), message=message, event_id=event.event_id
             )
-        elif isinstance(event, GroupMemberAddEvent):
+        elif isinstance(event, GroupMemberEvent):
+            # 覆盖 GroupMemberAddEvent/GroupMemberRemoveEvent，两者路由方式相同。
             return await self.send_to_group(
                 group_openid=event.group_openid,
                 message=message,
