@@ -108,6 +108,66 @@ def test_multiple_media_segments_conflict():
         Bot._check_message_conflicts(message, is_group=False)
 
 
+def test_multiple_ark_segments_conflict():
+    # 不涉及 markdown/text，单独测 ark 自己的 [-1] 静默丢弃
+    message = MessageSegment.ark(MessageArk(template_id=1)) + MessageSegment.ark(
+        MessageArk(template_id=2)
+    )
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=False)
+
+
+def test_multiple_embed_segments_conflict():
+    message = MessageSegment.embed(MessageEmbed(prompt="a")) + MessageSegment.embed(
+        MessageEmbed(prompt="b")
+    )
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=False)
+
+
+def test_multiple_reference_segments_conflict():
+    message = MessageSegment.reference("111") + MessageSegment.reference("222")
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=False)
+
+
+def test_multiple_keyboard_segments_conflict():
+    message = (
+        MessageSegment.markdown("hi")
+        + MessageSegment.keyboard(MessageKeyboard(id="1"))
+        + MessageSegment.keyboard(MessageKeyboard(id="2"))
+    )
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=True)
+
+
+def test_multiple_stream_segments_conflict():
+    # stream 只在 c2c 里被支持，group 会在更早的规则里直接拒绝
+    message = MessageSegment.stream(1, None, 0) + MessageSegment.stream(1, None, 1)
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=False)
+
+
+def test_multiple_prompt_keyboard_segments_conflict():
+    message = (
+        MessageSegment.markdown("hi")
+        + MessageSegment.prompt_keyboard(_prompt_keyboard())
+        + MessageSegment.prompt_keyboard(_prompt_keyboard())
+    )
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=False)
+
+
+def test_multiple_action_button_segments_conflict():
+    message = (
+        MessageSegment.markdown("hi")
+        + MessageSegment.action_button(MessageActionButton())
+        + MessageSegment.action_button(MessageActionButton())
+    )
+    with pytest.raises(MessageSegmentConflict):
+        Bot._check_message_conflicts(message, is_group=False)
+
+
 def test_keyboard_without_markdown_conflict():
     message = Message(MessageSegment.keyboard(MessageKeyboard(id="1")))
     with pytest.raises(MessageSegmentConflict):

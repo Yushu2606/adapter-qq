@@ -520,6 +520,10 @@ class Bot(BaseBot):
         （没有需要合并的场景时，原样返回传入的 message）。text 段与自由文本一样
         涉及不可靠的转义，仍然会被拒绝；模板形式的 markdown 段
         （template_id/custom_template_id）没有自由文本位置，也不参与合并。
+
+        embed/ark/reference/keyboard/stream/prompt_keyboard/action_button 这几
+        种字段 _extract_send_message 都是 xxx[-1] 只取最后一个，多个同类型段
+        共存时同样会被拒绝，而不是静默丢弃前面的。
         """
         if is_group:
             if message["stream"]:
@@ -560,6 +564,24 @@ class Bot(BaseBot):
             if seg.data["markdown"].template_id is not None
             or seg.data["markdown"].custom_template_id is not None
         ]
+
+        # _extract_send_message 对这些字段都是 xxx[-1] 静默取最后一个，多个同类型
+        # 段共存时前面的会被静默丢弃——markdown 单独处理（合并/报错），ark 在下面
+        # 结合 markdown/text 单独处理，这里统一拦掉剩下几种字段的重复段。
+        for singleton_type in (
+            "embed",
+            "ark",
+            "reference",
+            "keyboard",
+            "stream",
+            "prompt_keyboard",
+            "action_button",
+        ):
+            if len(message[singleton_type]) > 1:
+                raise MessageSegmentConflict(
+                    f"一条消息里不能包含多个 {singleton_type} 段：QQ 官方 API 只会"
+                    "使用其中一个，其余会被静默丢弃"
+                )
 
         if template_markdown_segs and (len(markdown_segs) > 1 or text_like):
             raise MessageSegmentConflict(
