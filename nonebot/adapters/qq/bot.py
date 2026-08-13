@@ -41,6 +41,7 @@ from .exception import (
     ActionFailed,
     ApiNotAvailable,
     AuditException,
+    MessageSegmentConflict,
     NetworkError,
     RateLimitException,
     UnauthorizedException,
@@ -494,6 +495,133 @@ class Bot(BaseBot):
                 )
         return kwargs
 
+    _MARKDOWN_MERGEABLE_TAG_TYPES = (
+        "mention_user",
+        "mention_everyone",
+        "mention_channel",
+        "emoji",
+    )
+
+    @staticmethod
+    def _check_message_conflicts(message: Message, *, is_group: bool) -> Message:
+        """校验并规整 C2C/群聊消息中的消息段组合。
+
+        send_to_c2c/send_to_group 按字段优先级（embed > ark > markdown/keyboard
+        [> prompt_keyboard/action_button 仅 c2c] > 媒体 > 纯文本）选出 msg_type，
+        但未被选中的字段并不会从请求体里被裁剪——混排会导致内容被平台静默丢弃，
+        或者请求本身违反官方接口的互斥/必填限制。这里在真正发起请求前于本地
+        直接拒绝这些组合，而不是把冲突字段一起发出去让 QQ 服务器自己决定。
+
+        唯一的例外是纯 content 形式的 markdown 段与 mention_user/
+        mention_everyone/mention_channel/emoji 段（包括多个纯 content markdown
+        段共存）：这几种段都是结构化标签，不需要转义，且消息本身已经显式带了
+        markdown 段（不存在"隐式转 markdown"的问题），所以会按消息里的原始顺序
+        合并成一个 markdown 段，而不是报错；返回值就是合并后的 Message
+        （没有需要合并的场景时，原样返回传入的 message）。text 段与自由文本一样
+        涉及不可靠的转义，仍然会被拒绝；模板形式的 markdown 段
+        （template_id/custom_template_id）没有自由文本位置，也不参与合并。
+        """
+        if is_group:
+            if message["stream"]:
+                raise MessageSegmentConflict(
+                    "群聊消息不支持 stream 段：QQ 官方群聊消息接口没有 stream 字段"
+                )
+            if message["prompt_keyboard"]:
+                raise MessageSegmentConflict(
+                    "群聊消息不支持 prompt_keyboard 段：QQ 官方群聊消息接口没有"
+                    " prompt_keyboard 字段"
+                )
+            if message["action_button"]:
+                raise MessageSegmentConflict(
+                    "群聊消息不支持 action_button 段：QQ 官方群聊消息接口没有"
+                    " action_button 字段"
+                )
+
+        text_segs = message["text"]
+        mergeable_tag_segs = Message(
+            seg for seg in message if seg.type in Bot._MARKDOWN_MERGEABLE_TAG_TYPES
+        )
+        text_like = text_segs + mergeable_tag_segs
+        markdown_segs = message["markdown"]
+        ark_segs = message["ark"]
+        media_segs = (
+            message["image"]
+            + message["video"]
+            + message["audio"]
+            + message["file"]
+            + message["file_image"]
+            + message["file_video"]
+            + message["file_audio"]
+            + message["file_file"]
+        )
+        template_markdown_segs = [
+            seg
+            for seg in markdown_segs
+            if seg.data["markdown"].template_id is not None
+            or seg.data["markdown"].custom_template_id is not None
+        ]
+
+        if template_markdown_segs and (len(markdown_segs) > 1 or text_like):
+            raise MessageSegmentConflict(
+                "模板 markdown 段（template_id/custom_template_id）不支持与其他"
+                " markdown 段或 text/mention_user/mention_everyone/"
+                "mention_channel/emoji 段混排：模板消息没有自由文本位置，"
+                "无法合并"
+            )
+        if markdown_segs and text_segs:
+            raise MessageSegmentConflict(
+                "markdown 段不能与 text 段混排：QQ 官方 API 要求发送 markdown"
+                " 消息时 content 字段必须为空，自由文本又无法安全地自动转义合并"
+                "进 markdown，请把文本内容写进 markdown 段本身，或者不要在同一条"
+                "消息里使用 markdown 段"
+            )
+        if ark_segs and (markdown_segs or text_like):
+            raise MessageSegmentConflict(
+                "ark 段不能与 markdown 段或 text/mention_user/mention_everyone/"
+                "mention_channel/emoji 段混排：QQ 官方 API 要求发送 markdown 消息时"
+                " content/ark 字段必须为空"
+            )
+        if media_segs and (
+            markdown_segs or ark_segs or message["embed"] or message["keyboard"]
+        ):
+            raise MessageSegmentConflict(
+                "image/video/audio/file 等媒体段不能与 embed/ark/markdown/keyboard"
+                " 段混排：混排时媒体内容不会被实际发送"
+            )
+        if len(media_segs) > 1:
+            raise MessageSegmentConflict(
+                "一条消息里只能包含一个媒体段（image/video/audio/file 等）："
+                "多个媒体段时只有一个会被实际发送，其余会被静默丢弃"
+            )
+
+        markdown_dependents = message["keyboard"]
+        if not is_group:
+            markdown_dependents = (
+                markdown_dependents
+                + message["prompt_keyboard"]
+                + message["action_button"]
+            )
+        if markdown_dependents and not markdown_segs:
+            raise MessageSegmentConflict(
+                "keyboard/prompt_keyboard/action_button 段必须与 markdown 段一起"
+                "使用：QQ 官方 API 会把这些段判定为 msg_type=2（Markdown），而"
+                " markdown 字段在 msg_type=2 时必填，单独使用会导致请求缺少必填字段"
+            )
+
+        if not markdown_segs or (len(markdown_segs) == 1 and not mergeable_tag_segs):
+            return message
+
+        merge_types = {"markdown", *Bot._MARKDOWN_MERGEABLE_TAG_TYPES}
+        parts: list[str] = []
+        for seg in message:
+            if seg.type == "markdown":
+                parts.append(seg.data["markdown"].content or "")
+            elif seg.type in merge_types:
+                parts.append(str(seg))
+        merged_markdown = Message(MessageSegment.markdown("".join(parts)))
+        remaining = Message(seg for seg in message if seg.type not in merge_types)
+        return merged_markdown + remaining
+
     async def send_to_dms(
         self,
         guild_id: str,
@@ -536,6 +664,7 @@ class Bot(BaseBot):
         msg_ref_id: str | None = None,
     ) -> PostC2CMessagesReturn | PostC2CFilesReturn:
         message = self._prepare_message(message)
+        message = self._check_message_conflicts(message, is_group=False)
         kwargs = self._extract_send_message(
             message=message, msg_ref_id=msg_ref_id, escape_text=False
         )
@@ -599,6 +728,7 @@ class Bot(BaseBot):
         msg_ref_id: str | None = None,
     ) -> PostGroupMessagesReturn | PostGroupFilesReturn:
         message = self._prepare_message(message)
+        message = self._check_message_conflicts(message, is_group=True)
         kwargs = self._extract_send_message(
             message=message, msg_ref_id=msg_ref_id, escape_text=False
         )
