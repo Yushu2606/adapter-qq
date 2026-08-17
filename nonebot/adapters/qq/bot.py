@@ -60,6 +60,9 @@ from .models import (
     EmojiType,
     GetGuildAPIPermissionReturn,
     GetGuildRolesReturn,
+    GetMenuReturn,
+    GetPanelReturn,
+    GetPanelsReturn,
     GetReactionUsersReturn,
     GetRoleMembersReturn,
     GetThreadReturn,
@@ -67,6 +70,7 @@ from .models import (
     Guild,
     Media,
     Member,
+    Menu,
     MessageActionButton,
     MessageArk,
     MessageEmbed,
@@ -76,6 +80,7 @@ from .models import (
     MessageReference,
     MessageSetting,
     MessageStream,
+    Panel,
     PatchGuildRoleReturn,
     PinsMessage,
     PostC2CFilesPrepareReturn,
@@ -86,7 +91,10 @@ from .models import (
     PostGroupMembersReturn,
     PostGroupMessagesReturn,
     PostGuildRoleReturn,
+    PostPanelReturn,
     PrivateType,
+    PutMenuReturn,
+    PutPanelReturn,
     PutThreadReturn,
     RecommendChannel,
     RemindType,
@@ -2335,3 +2343,111 @@ class Bot(BaseBot):
         return type_validate_python(
             PostGroupMembersReturn, await self._request(request)
         )
+
+    # Menu API
+    @API
+    async def get_menu(self) -> GetMenuReturn:
+        request = Request(
+            "GET",
+            self.adapter.get_api_base().joinpath("v2", "menu"),
+        )
+        return type_validate_python(GetMenuReturn, await self._request(request))
+
+    @API
+    async def put_menu(self, *, menu: Menu | None = None) -> PutMenuReturn:
+        request = Request(
+            "PUT",
+            self.adapter.get_api_base().joinpath("v2", "menu"),
+            json=exclude_none(
+                {"menu": menu.dict(exclude_none=True) if menu is not None else None}
+            ),
+        )
+        return type_validate_python(PutMenuReturn, await self._request(request))
+
+    # Command Panel API
+    @API
+    async def get_panels(
+        self,
+        *,
+        scope: Literal["c2c", "group", "channel", "dm"],
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> GetPanelsReturn:
+        request = Request(
+            "GET",
+            self.adapter.get_api_base().joinpath("v2", "panels"),
+            params=exclude_none({"scope": scope, "cursor": cursor, "limit": limit}),
+        )
+        return type_validate_python(GetPanelsReturn, await self._request(request))
+
+    @API
+    async def post_panel(
+        self,
+        *,
+        scope: Literal["c2c", "group", "channel", "dm"],
+        panel: Panel,
+        target_type: Literal["all", "specific"] | None = None,
+        user_openids: list[str] | None = None,
+        group_openids: list[str] | None = None,
+    ) -> PostPanelReturn:
+        request = Request(
+            "POST",
+            self.adapter.get_api_base().joinpath("v2", "panels"),
+            json=exclude_none(
+                {
+                    "scope": scope,
+                    "target_type": target_type,
+                    "user_openids": user_openids,
+                    "group_openids": group_openids,
+                    "panel": panel.dict(exclude_none=True),
+                }
+            ),
+        )
+        return type_validate_python(PostPanelReturn, await self._request(request))
+
+    @API
+    async def get_panel(self, *, panel_id: str) -> GetPanelReturn:
+        request = Request(
+            "GET",
+            self.adapter.get_api_base().joinpath("v2", "panels", panel_id),
+        )
+        return type_validate_python(GetPanelReturn, await self._request(request))
+
+    @API
+    async def put_panel(self, *, panel_id: str, panel: Panel) -> PutPanelReturn:
+        request = Request(
+            "PUT",
+            self.adapter.get_api_base().joinpath("v2", "panels", panel_id),
+            json={"panel": panel.dict(exclude_none=True)},
+        )
+        return type_validate_python(PutPanelReturn, await self._request(request))
+
+    @API
+    async def delete_panel(self, *, panel_id: str) -> None:
+        request = Request(
+            "DELETE",
+            self.adapter.get_api_base().joinpath("v2", "panels", panel_id),
+        )
+        return await self._request(request)
+
+    @API
+    async def put_panel_target(
+        self,
+        *,
+        panel_id: str,
+        op: Literal["add", "del"],
+        user_openids: list[str] | None = None,
+        group_openids: list[str] | None = None,
+    ) -> None:
+        request = Request(
+            "PUT",
+            self.adapter.get_api_base().joinpath("v2", "panels", panel_id, "target"),
+            json=exclude_none(
+                {
+                    "op": op,
+                    "user_openids": user_openids,
+                    "group_openids": group_openids,
+                }
+            ),
+        )
+        return await self._request(request)
