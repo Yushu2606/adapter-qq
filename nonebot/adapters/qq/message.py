@@ -578,7 +578,7 @@ class Message(BaseMessage[MessageSegment]):
     def _construct(msg: str) -> Iterable[MessageSegment]:
         text_begin = 0
         for embed in re.finditer(
-            r"\<(?P<type>(?:#|emoji:))!?(?P<id>\w+?)\>|\<(?P<type1>qqbot-at-user) id=\"(?P<id1>\w+)\"\s/\>|\<(?P<everyone>qqbot-at-everyone)\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
+            r"\<(?P<type>(?:#|emoji:))!?(?P<id>\w+?)\>|\<(?P<at_user>qqbot-at-user) id=\"(?P<at_user_id>\w+)\"\s/\>|\<(?P<everyone>qqbot-at-everyone)\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
             msg,
         ):
             content = msg[text_begin : embed.pos + embed.start()]
@@ -591,8 +591,10 @@ class Message(BaseMessage[MessageSegment]):
                 )
             elif embed.group("type") == "emoji":
                 yield Emoji("emoji", {"id": embed.group("id")})
-            elif embed.group("type1") == "qqbot-at-user":
-                yield MentionUser("mention_user", {"user_id": embed.group("id1")})
+            elif embed.group("at_user") == "qqbot-at-user":
+                yield MentionUser(
+                    "mention_user", {"user_id": embed.group("at_user_id")}
+                )
             elif embed.group("everyone") == "qqbot-at-everyone":
                 yield MessageSegment.mention_everyone()
             elif embed.group("faceType") and embed.group("faceId") != "0":
