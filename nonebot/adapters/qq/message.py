@@ -13,6 +13,7 @@ from nonebot.adapters import MessageSegment as BaseMessageSegment
 
 from .models import Attachment as QQAttachment
 from .models import (
+    GroupMentionEveryone,
     GroupMentionUser,
     MessageActionButton,
     MessageArk,
@@ -576,10 +577,11 @@ class Message(BaseMessage[MessageSegment]):
     @override
     def _construct(msg: str) -> Iterable[MessageSegment]:
         text_begin = 0
+        # 兜底：字面量 "@everyone" 不是结构化标签，随时可能是用户自己打的文本，
+        # 没法安全地当成提及全体成员处理，直接当噪音清掉。
         msg = msg.replace("@everyone", "")
-        msg = re.sub(r"\<qqbot-at-everyone\s/\>", "", msg)
         for embed in re.finditer(
-            r"\<(?P<type>(?:@|#|emoji:))!?(?P<id>\w+?)\>|\<(?P<type1>qqbot-at-user) id=\"(?P<id1>\w+)\"\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
+            r"\<(?P<type>(?:@|#|emoji:))!?(?P<id>\w+?)\>|\<(?P<type1>qqbot-at-user) id=\"(?P<id1>\w+)\"\s/\>|\<(?P<everyone>qqbot-at-everyone)\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
             msg,
         ):
             content = msg[text_begin : embed.pos + embed.start()]
@@ -599,6 +601,8 @@ class Message(BaseMessage[MessageSegment]):
                 yield Emoji("emoji", {"id": embed.group("id")})
             elif embed.group("type1") == "qqbot-at-user":
                 yield MentionUser("mention_user", {"user_id": embed.group("id1")})
+            elif embed.group("everyone") == "qqbot-at-everyone":
+                yield MessageSegment.mention_everyone()
             elif embed.group("faceType") and embed.group("faceId") != "0":
                 yield Emoji("emoji", {"id": embed["faceId"]})
         content = msg[text_begin:]
@@ -655,8 +659,18 @@ class Message(BaseMessage[MessageSegment]):
             mentions = {
                 m.id: m for m in message.mentions if isinstance(m, GroupMentionUser)
             }
+            mentions_everyone = any(
+                isinstance(m, GroupMentionEveryone) for m in message.mentions
+            )
         else:
             mentions = {}
+            mentions_everyone = False
+
+        # QQMessage.mentions 会用 GroupMentionEveryone 结构化地下发"@全体成员"，
+        # 不依赖 content 文本解析；content 里如果也带了对应标签，_construct 已经
+        # 生成过 mention_everyone 段，这里避免重复插入。
+        if mentions_everyone and not msg["mention_everyone"]:
+            msg.insert(0, MessageSegment.mention_everyone())
 
         ats = msg["mention_user"]
         if not ats:

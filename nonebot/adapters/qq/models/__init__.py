@@ -1,5 +1,6 @@
 from .common import *  # noqa: F403
 from .guild import *  # noqa: F403
+from .menu import *  # noqa: F403
 from .payload import Dispatch as Dispatch
 from .payload import Heartbeat as Heartbeat
 from .payload import HeartbeatAck as HeartbeatAck
