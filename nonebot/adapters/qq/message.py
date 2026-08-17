@@ -577,23 +577,15 @@ class Message(BaseMessage[MessageSegment]):
     @override
     def _construct(msg: str) -> Iterable[MessageSegment]:
         text_begin = 0
-        # 兜底：字面量 "@everyone" 不是结构化标签，随时可能是用户自己打的文本，
-        # 没法安全地当成提及全体成员处理，直接当噪音清掉。
-        msg = msg.replace("@everyone", "")
         for embed in re.finditer(
-            r"\<(?P<type>(?:@|#|emoji:))!?(?P<id>\w+?)\>|\<(?P<type1>qqbot-at-user) id=\"(?P<id1>\w+)\"\s/\>|\<(?P<everyone>qqbot-at-everyone)\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
+            r"\<(?P<type>(?:#|emoji:))!?(?P<id>\w+?)\>|\<(?P<type1>qqbot-at-user) id=\"(?P<id1>\w+)\"\s/\>|\<(?P<everyone>qqbot-at-everyone)\s/\>|\<faceType=(?P<faceType>\d+),faceId=\"(?P<faceId>\d+)\",ext=\"[\w\=]+\"\>",  # noqa: E501
             msg,
         ):
             content = msg[text_begin : embed.pos + embed.start()]
             if content:
                 yield Text("text", {"text": unescape(content)})
             text_begin = embed.pos + embed.end()
-            if embed.group("type") == "@":
-                if embed.group("id") == "all":
-                    yield MessageSegment.mention_everyone()
-                else:
-                    yield MentionUser("mention_user", {"user_id": embed.group("id")})
-            elif embed.group("type") == "#":
+            if embed.group("type") == "#":
                 yield MentionChannel(
                     "mention_channel", {"channel_id": embed.group("id")}
                 )

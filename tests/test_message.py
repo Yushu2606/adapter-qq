@@ -21,20 +21,21 @@ def test_construct_recognizes_new_mention_everyone_tag():
     ]
 
 
-def test_construct_recognizes_legacy_at_all_tag():
+def test_construct_no_longer_recognizes_legacy_at_all_tag():
+    # 旧版 <@all>/<@id> 标签格式已经不再下发（维护者确认），不再做兜底识别，
+    # 原样保留成文本
     message = Message("<@all>hi")
 
-    assert [(seg.type, seg.data) for seg in message] == [
-        ("mention_everyone", {}),
-        ("text", {"text": "hi"}),
-    ]
+    assert [(seg.type, seg.data) for seg in message] == [("text", {"text": "<@all>hi"})]
 
 
-def test_construct_strips_literal_at_everyone_without_segment():
-    # 字面量 "@everyone" 不是结构化标签，只做兜底清理，不生成 mention_everyone 段
+def test_construct_no_longer_strips_literal_at_everyone():
+    # 旧版字面量 "@everyone" 兜底清理逻辑已移除，原样保留成文本
     message = Message("hi @everyone bye")
 
-    assert [(seg.type, seg.data) for seg in message] == [("text", {"text": "hi  bye"})]
+    assert [(seg.type, seg.data) for seg in message] == [
+        ("text", {"text": "hi @everyone bye"})
+    ]
 
 
 def test_from_qq_message_recognizes_structured_mention_everyone():
